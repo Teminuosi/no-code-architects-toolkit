@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 @authenticate
 @queue_task_wrapper(bypass_queue=True)
 def test_api(job_id, data):
+    endpoint = "/v1/toolkit/test"  # 添加endpoint变量定义
     logger.info(f"Job {job_id}: Testing NCA Toolkit API setup")
     
     try:
@@ -45,8 +46,8 @@ def test_api(job_id, data):
         # Clean up local file
         os.remove(test_filename)
         
-        return upload_url, "/v1/toolkit/test", 200
+        return upload_url, endpoint, 200
         
     except Exception as e:
         logger.error(f"Job {job_id}: Error testing API setup - {str(e)}")
-        return str(e), "/v1/toolkit/test", 500
+        return str(e), endpoint, 500

@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 def get_job_status(job_id, data):
 
     get_job_id = data.get('job_id')
+    endpoint = "/v1/toolkit/job/status"  # 添加endpoint变量定义
 
     logger.info(f"Retrieving status for job {get_job_id}")
     
@@ -58,8 +59,8 @@ def get_job_status(job_id, data):
             job_status = json.load(file)
         
         # Return the job status file content directly
-        return job_status, "/v1/toolkit/job/status", 200
+        return job_status, endpoint, 200
         
     except Exception as e:
         logger.error(f"Error retrieving status for job {get_job_id}: {str(e)}")
-        return {"error": f"Failed to retrieve job status: {str(e)}"}, endpoint, 500 
+        return {"error": f"Failed to retrieve job status: {str(e)}"}, endpoint, 500

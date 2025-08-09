@@ -28,8 +28,9 @@ API_KEY = os.environ.get('API_KEY')
 @auth_bp.route('/authenticate', methods=['GET'])
 @queue_task_wrapper(bypass_queue=True)
 def authenticate_endpoint(**kwargs):
+    endpoint = "/authenticate"  # 添加endpoint变量定义
     api_key = request.headers.get('X-API-Key')
     if api_key == API_KEY:
-        return "Authorized", "/authenticate", 200
+        return "Authorized", endpoint, 200
     else:
-        return "Unauthorized", "/authenticate", 401
+        return "Unauthorized", endpoint, 401

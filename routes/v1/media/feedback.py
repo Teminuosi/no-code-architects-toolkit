@@ -39,6 +39,7 @@ def serve_feedback_page():
     """
     Serve the feedback HTML page with path corrections
     """
+    endpoint = "serve_feedback_page"  # 添加endpoint变量定义
     try:
         # Get the feedback static files directory path
         feedback_path = get_feedback_path()
@@ -61,13 +62,14 @@ def serve_feedback_page():
         return response
     except Exception as e:
         current_app.logger.error(f"Error serving index.html: {str(e)}")
-        return str(e), 'serve_feedback_page', 500
+        return str(e), endpoint, 500
 
 @v1_media_feedback_bp.route('/_next/<path:path>', methods=['GET'])
 def serve_next_static(path):
     """
     Serve Next.js static files from _next directory
     """
+    endpoint = "serve_next_static"  # 添加endpoint变量定义
     try:
         feedback_path = get_feedback_path()
         file_path = os.path.join('_next', path)
@@ -125,13 +127,14 @@ def serve_next_static(path):
         return response
     except Exception as e:
         current_app.logger.error(f"Error serving Next.js static file {path}: {str(e)}")
-        return str(e), 'serve_next_static', 500
+        return str(e), endpoint, 500
 
 @v1_media_feedback_bp.route('/<path:filename>', methods=['GET'])
 def serve_feedback_static(filename):
     """
     Serve static files for the feedback page (CSS, JS, images, etc.)
     """
+    endpoint = "/v1/media/feedback"  # 添加endpoint变量定义
     try:
         # Get the feedback static files directory path
         feedback_path = get_feedback_path()
@@ -179,7 +182,7 @@ def serve_feedback_static(filename):
         return response
     except FileNotFoundError:
         current_app.logger.error(f"Static file not found: {filename}")
-        return "File not found", 404
+        return "File not found", endpoint, 404
     except Exception as e:
         current_app.logger.error(f"Error serving static file {filename}: {str(e)}")
-        return str(e), 500
+        return str(e), endpoint, 500
