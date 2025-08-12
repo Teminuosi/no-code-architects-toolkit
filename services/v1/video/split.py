@@ -165,11 +165,25 @@ def split_video(
         for index, (split_index, start_seconds, end_seconds, split_data) in enumerate(valid_splits):
             output_filename = os.path.join(LOCAL_STORAGE_PATH, f"{job_id}_split_{split_index+1}{ext}")
 
+            # Use duration (-t) instead of absolute end (-to) to avoid tail zero-frame issues
+            EPS = 0.05  # 50ms safety margin for floating rounding
+            segment_duration = max(0.0, end_seconds - start_seconds)
+            if segment_duration <= 0:
+                results[split_index] = {
+                    "status": "error",
+                    "output_file": None,
+                    "error": "Segment duration is zero or negative after normalization"
+                }
+                continue
+            # Avoid extremely tiny durations caused by rounding
+            if segment_duration < EPS:
+                segment_duration = EPS
+
             cmd = [
                 'ffmpeg',
                 '-i', input_filename,
                 '-ss', str(start_seconds),
-                '-to', str(end_seconds),
+                '-t', str(segment_duration),
                 '-c:v', video_codec,
                 '-preset', video_preset,
                 '-crf', str(video_crf),
