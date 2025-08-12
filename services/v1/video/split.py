@@ -52,23 +52,38 @@ def time_to_seconds(time_str):
     except ValueError:
         raise ValueError(f"Invalid time format: {time_str}. Expected HH:MM:SS[.mmm]")
 
-def split_video(video_url, splits, job_id=None, video_codec='libx264', video_preset='medium', 
-               video_crf=23, audio_codec='aac', audio_bitrate='128k'):
+def split_video(
+    video_url,
+    splits,
+    job_id=None,
+    video_codec='libx264',
+    video_preset='medium',
+    video_crf=23,
+    audio_codec='aac',
+    audio_bitrate='128k',
+):
     """
-    Splits a video file into multiple segments with customizable encoding settings.
-    
+    Split a video into multiple segments with customizable encoding settings.
+
     Args:
         video_url (str): URL of the video file to split
-        splits (list): List of dictionaries with 'start' and 'end' timestamps
+        splits (list): List of dicts with 'start' and 'end' timestamps (strings)
         job_id (str, optional): Unique job identifier
         video_codec (str, optional): Video codec to use for encoding (default: 'libx264')
         video_preset (str, optional): Encoding preset for speed/quality tradeoff (default: 'medium')
         video_crf (int, optional): Constant Rate Factor for quality (0-51, default: 23)
         audio_codec (str, optional): Audio codec to use for encoding (default: 'aac')
         audio_bitrate (str, optional): Audio bitrate (default: '128k')
-        
+
     Returns:
-        tuple: (list of output file paths, input file path)
+        tuple: (results, input_filename)
+
+        results is a list aligned to the input "splits" length. Each item is a dict:
+            {
+              "status": "ok" | "error",
+              "output_file": "/path/to/file" | None,
+              "error": "reason-if-any"
+            }
     """
     logger.info(f"Starting video split operation for {video_url}")
     if not job_id:
@@ -77,7 +92,15 @@ def split_video(video_url, splits, job_id=None, video_codec='libx264', video_pre
     input_filename = download_file(video_url, os.path.join(LOCAL_STORAGE_PATH, f"{job_id}_input"))
     logger.info(f"Downloaded video to local file: {input_filename}")
     
-    output_files = []
+    # Results aligned to input splits length
+    results = [
+        {
+            "status": "error",
+            "output_file": None,
+            "error": "Unprocessed"
+        }
+        for _ in splits
+    ]
     
     try:
         # Get the file extension
@@ -106,37 +129,42 @@ def split_video(video_url, splits, job_id=None, video_codec='libx264', video_pre
             try:
                 start_seconds = time_to_seconds(split['start'])
                 end_seconds = time_to_seconds(split['end'])
-                
-                # Validate split times
-                if start_seconds >= end_seconds:
-                    logger.warning(f"Invalid split {i+1}: start time ({split['start']}) must be before end time ({split['end']}). Skipping.")
-                    continue
-                
+
+                # normalize
                 if start_seconds < 0:
                     logger.warning(f"Split {i+1} start time {split['start']} is negative, using 0 instead")
                     start_seconds = 0
-                    
                 if end_seconds > file_duration:
                     logger.warning(f"Split {i+1} end time {split['end']} exceeds file duration, using file duration instead")
                     end_seconds = file_duration
-                    
-                # Only add valid splits
+
                 if start_seconds < end_seconds:
                     valid_splits.append((i, start_seconds, end_seconds, split))
+                else:
+                    # mark invalid
+                    results[i] = {
+                        "status": "error",
+                        "output_file": None,
+                        "error": f"Invalid split: start ({split['start']}) must be before end ({split['end']}) within duration"
+                    }
             except ValueError as e:
                 logger.warning(f"Error processing split {i+1}: {str(e)}. Skipping.")
-        
+                results[i] = {
+                    "status": "error",
+                    "output_file": None,
+                    "error": str(e)
+                }
+
         if not valid_splits:
-            raise ValueError("No valid split segments specified")
-            
+            # No valid splits at all
+            return results, input_filename
+
         logger.info(f"Processing {len(valid_splits)} valid splits")
-        
-        # Process each split
+
+        # Process each valid split independently
         for index, (split_index, start_seconds, end_seconds, split_data) in enumerate(valid_splits):
-            # Create output filename for this split
-            output_filename = os.path.join(LOCAL_STORAGE_PATH, f"{job_id}_split_{index+1}{ext}")
-            
-            # Create FFmpeg command to extract the segment
+            output_filename = os.path.join(LOCAL_STORAGE_PATH, f"{job_id}_split_{split_index+1}{ext}")
+
             cmd = [
                 'ffmpeg',
                 '-i', input_filename,
@@ -150,22 +178,29 @@ def split_video(video_url, splits, job_id=None, video_codec='libx264', video_pre
                 '-avoid_negative_ts', 'make_zero',
                 output_filename
             ]
-            
-            logger.info(f"Running FFmpeg command for split {index+1}: {' '.join(cmd)}")
-            
-            # Run the FFmpeg command
+
+            logger.info(f"Running FFmpeg command for split index {split_index+1}: {' '.join(cmd)}")
+
             process = subprocess.run(cmd, capture_output=True, text=True)
-            
+
             if process.returncode != 0:
-                logger.error(f"Error processing split {index+1}: {process.stderr}")
-                raise Exception(f"FFmpeg error for split {index+1}: {process.stderr}")
-            
-            # Add the output file to the list
-            output_files.append(output_filename)
-            logger.info(f"Successfully created split {index+1}: {output_filename}")
-        
-        # Return the list of output files and the input filename
-        return output_files, input_filename
+                logger.error(f"Error processing split index {split_index+1}: {process.stderr}")
+                results[split_index] = {
+                    "status": "error",
+                    "output_file": None,
+                    "error": f"FFmpeg error: {process.stderr.strip()}"
+                }
+                continue
+
+            logger.info(f"Successfully created split index {split_index+1}: {output_filename}")
+            results[split_index] = {
+                "status": "ok",
+                "output_file": output_filename,
+                "error": None,
+            }
+
+        # Return aligned results and the input filename
+        return results, input_filename
         
     except Exception as e:
         logger.error(f"Video split operation failed: {str(e)}")
@@ -173,9 +208,13 @@ def split_video(video_url, splits, job_id=None, video_codec='libx264', video_pre
         # Clean up all temporary files if they exist
         if 'input_filename' in locals() and os.path.exists(input_filename):
             os.remove(input_filename)
-                
-        for output_file in output_files:
-            if os.path.exists(output_file):
-                os.remove(output_file)
+
+        # Attempt to clean up any successfully generated outputs on failure
+        if 'results' in locals():
+            for r in results:
+                if isinstance(r, dict) and r.get("status") == "ok":
+                    of = r.get("output_file")
+                    if of and os.path.exists(of):
+                        os.remove(of)
                 
         raise

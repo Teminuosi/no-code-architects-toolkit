@@ -71,8 +71,8 @@ def video_split(job_id, data):
     logger.info(f"Job {job_id}: Received video split request for {video_url}")
     
     try:
-        # Process the video file and get list of output files
-        output_files, input_filename = split_video(
+        # Process the video file and get aligned results for each input split
+        results, input_filename = split_video(
             video_url=video_url,
             splits=splits,
             job_id=job_id,
@@ -83,31 +83,36 @@ def video_split(job_id, data):
             audio_bitrate=audio_bitrate
         )
         
-        # Upload all output files to cloud storage
+        # Upload all success outputs to cloud storage; keep index aligned to input
         from services.cloud_storage import upload_file
-        result_files = []
-        
-        for i, output_file in enumerate(output_files):
-            cloud_url = upload_file(output_file)
-            result_files.append({
-                "file_url": cloud_url,
-                "start": splits[i]["start"],
-                "end": splits[i]["end"]
-            })
-            # Remove the local file after upload
-            import os
-            os.remove(output_file)
-            logger.info(f"Job {job_id}: Uploaded and removed split file {i+1}")
-        
-        # Clean up input file
+        response = []
         import os
-        os.remove(input_filename)
-        logger.info(f"Job {job_id}: Removed input file")
-        
-        # Prepare the response with only file URLs
-        response = [{"file_url": item["file_url"]} for item in result_files]
-        
-        logger.info(f"Job {job_id}: Video split operation completed successfully")
+        for idx, r in enumerate(results):
+            item = {"index": idx, "start": splits[idx]["start"], "end": splits[idx]["end"]}
+            if isinstance(r, dict) and r.get("status") == "ok" and r.get("output_file"):
+                try:
+                    cloud_url = upload_file(r["output_file"])
+                    item["file_url"] = cloud_url
+                    # best-effort cleanup of local output
+                    try:
+                        os.remove(r["output_file"])  # remove local file after upload
+                        logger.info(f"Job {job_id}: Uploaded and removed split output for index {idx}")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    item["error"] = f"Upload failed: {str(e)}"
+            else:
+                item["error"] = r.get("error") if isinstance(r, dict) else "Unknown error"
+            response.append(item)
+
+        # Clean up input file
+        try:
+            os.remove(input_filename)
+            logger.info(f"Job {job_id}: Removed input file")
+        except Exception:
+            pass
+
+        logger.info(f"Job {job_id}: Video split operation completed successfully with {len(response)} results")
         return response, "/v1/video/split", 200
         
     except Exception as e:
