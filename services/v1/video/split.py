@@ -165,23 +165,17 @@ def split_video(
         for index, (split_index, start_seconds, end_seconds, split_data) in enumerate(valid_splits):
             output_filename = os.path.join(LOCAL_STORAGE_PATH, f"{job_id}_split_{split_index+1}{ext}")
 
-            # Use -t (duration) instead of -to (end time) for better compatibility
-            duration = end_seconds - start_seconds
-            
             cmd = [
                 'ffmpeg',
                 '-i', input_filename,
                 '-ss', str(start_seconds),
-                '-t', str(duration),  # Changed from -to to -t for better compatibility
-                '-map', '0:v',  # Only map video stream from input 0
-                '-map', '0:a',  # Only map audio stream from input 0
+                '-to', str(end_seconds),
                 '-c:v', video_codec,
                 '-preset', video_preset,
                 '-crf', str(video_crf),
                 '-c:a', audio_codec,
                 '-b:a', audio_bitrate,
                 '-avoid_negative_ts', 'make_zero',
-                '-y',  # Overwrite output files without asking
                 output_filename
             ]
 
